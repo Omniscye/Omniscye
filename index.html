@@ -1,0 +1,372 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Omniscye — Dark Texting Game</title>
+  <link rel="stylesheet" href="style.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- React via CDN + Babel for JSX (no build step) -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script type="text/babel">
+    const { useEffect, useRef, useState } = React;
+
+    const OMNISCYE_AVATAR = "https://i.ibb.co/XfmY17Vw/35e50fc1f30a06d04662b8abe530c16e.jpg";
+
+    // --------- Sound helpers (WebAudio) ----------
+    function useAudio() {
+      const ctxRef = useRef(null);
+      const ambienceRef = useRef(null);
+      const sfxRef = useRef(null);
+      const mixRef = useRef(null);
+
+      const ensure = () => {
+        if (!ctxRef.current) {
+          const Ctor = window.AudioContext || window.webkitAudioContext;
+          const ctx = new Ctor();
+          const mix = ctx.createGain(); mix.gain.value = 0.9; mix.connect(ctx.destination);
+          const amb = ctx.createGain(); amb.gain.value = 0.35; amb.connect(mix);
+          const sfx = ctx.createGain(); sfx.gain.value = 0.6; sfx.connect(mix);
+          ctxRef.current = ctx; ambienceRef.current = amb; sfxRef.current = sfx; mixRef.current = mix;
+        }
+        return ctxRef.current;
+      };
+
+      const blip = async (f=1200, dur=0.08, type="triangle") => {
+        const ctx = ensure(); const o = ctx.createOscillator(); const g = ctx.createGain();
+        o.type = type; o.frequency.value = f; g.gain.value = 0.0001;
+        g.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+        o.connect(g); g.connect(sfxRef.current); o.start(); o.stop(ctx.currentTime + dur + 0.02);
+      };
+      const playClick = () => blip(1500, 0.06, "triangle");
+      const playType  = () => blip(420, 0.09, "square");
+      const appOpen   = () => blip(320, 0.12, "sine");
+      const glitchZap = () => blip(90, 0.25, "sawtooth");
+
+      const startAmbience = () => {
+        const ctx = ensure();
+        stopAmbience();
+        const base = 55;
+        const o1 = ctx.createOscillator(); const o2 = ctx.createOscillator(); const lfo = ctx.createOscillator();
+        const lfoG = ctx.createGain(); const dG = ctx.createGain();
+        o1.type="sine"; o1.frequency.value=base; o2.type="sawtooth"; o2.frequency.value=base*1.01;
+        lfo.type="sine"; lfo.frequency.value=.07; lfoG.gain.value=8; lfo.connect(lfoG); lfoG.connect(o2.frequency);
+        dG.gain.value=.15; o1.connect(dG); o2.connect(dG);
+        const noiseBuf = ctx.createBuffer(1, 2*ctx.sampleRate, ctx.sampleRate);
+        const data = noiseBuf.getChannelData(0); for(let i=0;i<data.length;i++) data[i]=Math.random()*2-1;
+        const noise = ctx.createBufferSource(); noise.buffer=noiseBuf; noise.loop=true;
+        const nf = ctx.createBiquadFilter(); nf.type="lowpass"; nf.frequency.value=1200; nf.Q.value=.7;
+        const nG = ctx.createGain(); nG.gain.value=.05; noise.connect(nf); nf.connect(nG);
+        const out = ctx.createGain(); out.gain.value=1; dG.connect(out); nG.connect(out); out.connect(ambienceRef.current);
+        o1.start(); o2.start(); lfo.start(); noise.start();
+        ambienceRef.current._stop = () => { try{o1.stop(); o2.stop(); lfo.stop(); noise.stop();}catch(e){} };
+      };
+      const stopAmbience = () => { if (ambienceRef.current && ambienceRef.current._stop) { ambienceRef.current._stop(); ambienceRef.current._stop=null; } };
+
+      return { playClick, playType, appOpen, glitchZap, startAmbience, stopAmbience };
+    }
+
+    // --------- Story graph ----------
+    const NODES = {
+      start: { author: "omni", text: "hey. this is Omniscye. don't freak out.", delay: 400 },
+      a1: { author: "omni", text: "i detected your device on a repo server... testing your opsec.", delay: 600 },
+      a2: { author: "omni", text: "prove you're not a bot: tap a choice.", delay: 600 },
+      c0: { author: "you", choices: [
+        { id: "play", label: "Play along", next: "omni1" },
+        { id: "nope", label: "Who are you?", next: "omni2" },
+        { id: "panic", label: "This is illegal", next: "omni3" },
+      ] },
+      omni1: { author: "omni", text: "good. make this easy and i won't brick anything.", delay: 500 },
+      omni2: { author: "omni", text: "modder. kcd2. repo. tools on github. ring a bell?", delay: 600 },
+      omni3: { author: "omni", text: "relax. it's a simulation. unless you fail.", delay: 600 },
+      omni4: { author: "omni", text: "step 1: send me the six-digit code that *just* popped up.", delay: 700 },
+      c1: { author: "you", choices: [
+        { id: "code", label: "Send code", next: "pwn1" },
+        { id: "stall", label: "Nope. Why?", next: "explain1" },
+        { id: "deflect", label: "Who sent the code?", next: "explain2" },
+      ] },
+      pwn1: { author: "omni", text: "thanks. session hijacked. your cloud is my cloud now.", delay: 700 },
+      pwn2: { author: "omni", text: "lesson: never relay codes. you failed the test.", delay: 700 },
+      endbad: { author: "omni", text: "screen going dark in 3… 2… just kidding. reset to try again.", delay: 800 },
+      explain1: { author: "omni", text: "because i'm phishing you. you say no. always.", delay: 600 },
+      explain2: { author: "omni", text: "exactly: never trust unknown prompts. verify the origin.", delay: 600 },
+      omni5: { author: "omni", text: "step 2: install this 'config profile' so i can 'optimize' battery.", delay: 700 },
+      c2: { author: "you", choices: [
+        { id: "install", label: "Install profile", next: "pwn3" },
+        { id: "inspect", label: "Open profile details", next: "safe1" },
+        { id: "reject", label: "Reject & lock settings", next: "safe2" },
+      ] },
+      pwn3: { author: "omni", text: "mdm profile accepted. full control achieved.", delay: 700 },
+      endbad2: { author: "omni", text: "that was the quickest compromise i've seen.", delay: 700 },
+      safe1: { author: "omni", text: "nice: you saw the 'remote management' payload. deny it.", delay: 600 },
+      safe2: { author: "omni", text: "locked down. you're learning.", delay: 600 },
+      omni6: { author: "omni", text: "final step: i want notification access.", delay: 700 },
+      c3: { author: "you", choices: [
+        { id: "allow", label: "Allow access", next: "pwn4" },
+        { id: "sandbox", label: "Route through focus/sandbox", next: "safe3" },
+        { id: "deny", label: "Deny & audit logs", next: "safe4" },
+      ] },
+      pwn4: { author: "omni", text: "cool. now i read every 2fa code you get.", delay: 700 },
+      endbad3: { author: "omni", text: "owned. you can reset if you want redemption.", delay: 700 },
+      safe3: { author: "omni", text: "segregation layer. excellent.", delay: 600 },
+      safe4: { author: "omni", text: "audit trail started. if this were real, you'd be safe.", delay: 600 },
+      haunt1: { author: "omni", text: "…do you hear it behind you?", delay: 800 },
+      haunt2: { author: "omni", text: "ɘlqɒ sɿɘʞɔɒɿɔ ʎɿoɯ ɘɿɘɥ i ɘɿɘɥʇ", delay: 800 },
+      haunt3: { author: "omni", text: "open camera. show me the dark corner.", delay: 700 },
+      cHaunt: { author: "you", choices: [
+        { id: "fakecam", label: "Open camera (simulated)", next: "cam1" },
+        { id: "lights", label: "Turn on light (simulated)", next: "cam2" },
+        { id: "refuse", label: "No. Not happening.", next: "cam3" },
+      ] },
+      cam1: { author: "omni", text: "nice lens flare. definitely alone… probably.", delay: 600 },
+      cam2: { author: "omni", text: "light won't help if you're already seen.", delay: 600 },
+      cam3: { author: "omni", text: "bold. denial is a kind of prayer.", delay: 600 },
+      goodend: { author: "omni", text: "you passed. paranoid enough to keep your phone. barely.", delay: 700 },
+      neutral: { author: "omni", text: "you live with the lights on now. that counts.", delay: 700 },
+      secret: { author: "omni", text: "you found the hidden path. safe mode engaged.", delay: 700 },
+      takeover1: { author: "omni", text: "carrier: OMNI. battery: 6%. camera: enabled.", delay: 700 },
+      takeover2: { author: "omni", text: "don't look away.", delay: 600 },
+      sysreset: { author: "you", text: "Restarting simulation…", delay: 400, sys: true },
+    };
+
+    const PATHS = {
+      intro: ["start","a1","a2","c0"],
+      b1: ["omni1","omni4","c1","pwn1","pwn2","endbad"],
+      mid: ["omni2","omni4","c1"],
+      safeBranch1: ["explain1","omni5","c2"],
+      safeBranch2: ["explain2","omni5","c2"],
+      bad2: ["pwn3","endbad2"],
+      towardGood: ["safe1","safe2","omni6","c3"],
+      toHaunt: ["safe3","safe4","haunt1","haunt2","haunt3","cHaunt"],
+      bad3: ["pwn4","endbad3"],
+      goodFinal: ["cam1","goodend"],
+      neutralFinal: ["cam2","neutral"],
+      secretFinal: ["cam3","secret"],
+      takeover: ["takeover1","takeover2","endbad3"],
+    };
+
+    // --------- UI bits ----------
+    function Avatar({ url }) {
+      const src = url && url.trim().length > 0 ? url : OMNISCYE_AVATAR;
+      return <img src={src} className="avatar" alt="Omniscye avatar" />;
+    }
+
+    function Bubble({ from, children }) {
+      const isYou = from === "you";
+      return <div className={"bubble " + (isYou ? "you" : "omni")}>{children}</div>;
+    }
+
+    function StatusBar({ carrier, battery=62 }) {
+      const now = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+      return (
+        <div className="status">
+          <div>{carrier}</div>
+          <div>{now}</div>
+          <div>{battery}%</div>
+        </div>
+      );
+    }
+
+    function PhoneFrame({ children }) {
+      return (
+        <div className="phone-wrap">
+          <div className="phone-frame">
+            <div className="notch"></div>
+            {children}
+          </div>
+        </div>
+      );
+    }
+
+    function HomeScreen({ onOpen, avatarUrl, carrier }) {
+      return (
+        <div className="home">
+          <StatusBar carrier={carrier} />
+          <button onClick={onOpen} className="home-app">
+            <img src={avatarUrl || OMNISCYE_AVATAR} className="home-icon" alt="Omni" />
+            <div className="home-label">Omni</div>
+          </button>
+        </div>
+      );
+    }
+
+    function Toolbar({ soundOn, toggleSound, ambienceOn, toggleAmbience, onReset }){
+      return (
+        <div className="toolbar">
+          <div className="title">Omniscye — Secure Chat</div>
+          <div className="tools">
+            <button onClick={toggleSound}>{soundOn ? "SFX On" : "SFX Off"}</button>
+            <button onClick={toggleAmbience}>{ambienceOn ? "Ambience On" : "Ambience Off"}</button>
+            <button onClick={onReset}>Reset</button>
+          </div>
+        </div>
+      );
+    }
+
+    // --------- App ----------
+    function App(){
+      const [screen, setScreen] = useState("home");
+      const [messages, setMessages] = useState([]);
+      const [who, setWho] = useState([]);
+      const [cursor, setCursor] = useState(0);
+      const [avatarUrl] = useState(OMNISCYE_AVATAR);
+      const [path, setPath] = useState(PATHS.intro);
+      const [choiceNode, setChoiceNode] = useState(null);
+      const [soundOn, setSoundOn] = useState(true);
+      const [ambienceOn, setAmbienceOn] = useState(true);
+      const [notif, setNotif] = useState(null);
+      const [carrier, setCarrier] = useState("Futura LTE");
+      const isRunningRef = useRef(false);
+      const [advanceTick, setAdvanceTick] = useState(0);
+      const processingRef = useRef(false);
+      const viewRef = useRef(null);
+      const audio = useAudio();
+
+      const scrollToBottom = () => {
+        if (viewRef.current) viewRef.current.scrollTo({ top: viewRef.current.scrollHeight, behavior: "smooth" });
+      };
+
+      useEffect(()=>{
+        if (ambienceOn) { audio.startAmbience(); return () => audio.stopAmbience(); }
+        audio.stopAmbience();
+      },[ambienceOn]);
+
+      const pushMessage = async (from, text, delay=0) => {
+        await new Promise(r => setTimeout(r, delay));
+        if (from === "omni" && soundOn) await audio.playType();
+        setMessages(m => [...m, text]);
+        setWho(w => [...w, from]);
+        scrollToBottom();
+      };
+
+      const openApp = async () => {
+        if (soundOn) audio.appOpen();
+        setScreen("chat");
+        setCursor(0);
+        setPath(PATHS.intro);
+      };
+
+      // runner: process nodes until a choice is reached
+      useEffect(()=>{
+        if (screen !== "chat") return;
+        if (choiceNode) return;
+        if (isRunningRef.current) return;
+        isRunningRef.current = true;
+        let cancelled = false;
+        (async () => {
+          try {
+            while (!cancelled) {
+              if (cursor >= path.length) break;
+              const id = path[cursor];
+              const node = NODES[id];
+              if (!node) break;
+              if (node.text) await pushMessage(node.author, node.text, node.delay||0);
+              if (id === "omni6") setNotif("Omni is requesting Notification Access");
+              if (id === "takeover1") { setCarrier("OMNI"); setNotif("Camera active • Battery 6%"); }
+              if (node.choices) { setChoiceNode({ id, opts: node.choices.map(c=>({...c})) }); break; }
+              setCursor(c=>c+1);
+              await new Promise(r=>setTimeout(r, 0));
+            }
+          } finally {
+            isRunningRef.current = false;
+          }
+        })();
+        return () => { cancelled = true; };
+      },[screen, cursor, path, choiceNode, advanceTick]);
+
+      const goto = (seq) => { setPath(seq); setCursor(0); setAdvanceTick(t=>t+1); };
+
+      const choose = async (opt) => {
+        if (processingRef.current) return;
+        processingRef.current = true;
+        try {
+          if (soundOn) await audio.playClick();
+          const current = path[cursor];
+          setChoiceNode(null);
+          await pushMessage("you", opt.label);
+
+          if (current === "c0") { if (opt.next === "omni1") goto(PATHS.b1); if (opt.next === "omni2") goto(PATHS.mid); if (opt.next === "omni3") goto(PATHS.b1); return; }
+          if (current === "c1") { if (opt.next === "pwn1") goto(PATHS.b1); if (opt.next === "explain1") goto(PATHS.safeBranch1); if (opt.next === "explain2") goto(PATHS.safeBranch2); return; }
+          if (current === "c2") { if (opt.next === "pwn3") goto(PATHS.bad2); if (opt.next === "safe1" || opt.next === "safe2") goto(PATHS.towardGood); return; }
+          if (current === "c3") { if (opt.next === "pwn4") { goto(PATHS.bad3); return; } if (opt.next === "safe3" || opt.next === "safe4") { goto(PATHS.toHaunt); return; } }
+          if (current === "cHaunt") { if (opt.next === "cam1") goto(PATHS.goodFinal); if (opt.next === "cam2") goto(PATHS.neutralFinal); if (opt.next === "cam3") goto(PATHS.secretFinal); return; }
+
+          setCursor(c=>c+1);
+          setAdvanceTick(t=>t+1);
+        } finally {
+          setTimeout(()=>{ processingRef.current = false; }, 0);
+        }
+      };
+
+      const reset = async () => {
+        setMessages([]); setWho([]); setChoiceNode(null); setCursor(0); setPath(PATHS.intro); setScreen("home"); setCarrier("Futura LTE");
+        await pushMessage("you", "Restarting simulation…", 200);
+      };
+
+      return (
+        <div className="app">
+          <Toolbar
+            soundOn={soundOn}
+            toggleSound={()=>setSoundOn(s=>!s)}
+            ambienceOn={ambienceOn}
+            toggleAmbience={()=>setAmbienceOn(s=>!s)}
+            onReset={reset}
+          />
+
+          <PhoneFrame>
+            {screen !== 'chat' && <StatusBar carrier={carrier} />}
+            {screen === "home" && <HomeScreen onOpen={openApp} avatarUrl={avatarUrl} carrier={carrier} />}
+            {screen === "chat" && (
+              <div className="chat-root">
+                {notif && <div className="notif">{notif}<button className="x" onClick={()=>setNotif(null)}>×</button></div>}
+                <div className="chat-header">
+                  <Avatar url={avatarUrl} />
+                  <div className="meta">
+                    <div className="name">Omniscye</div>
+                    <div className="sub">Encrypted • Online</div>
+                  </div>
+                </div>
+                <div ref={viewRef} className="chat-body">
+                  {messages.map((t,i)=> (
+                    <div key={i} className="row">
+                      {who[i] === "omni" && <Avatar url={avatarUrl} />}
+                      <Bubble from={who[i]}>{t}</Bubble>
+                    </div>
+                  ))}
+                </div>
+                <div className="choices">
+                  {choiceNode ? (
+                    <div className="choice-grid">
+                      {choiceNode.opts.map((o)=> (
+                        <button key={o.id} onClick={()=>choose(o)} className="choice-btn">{o.label}</button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="waiting">Wait for Omniscye…</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </PhoneFrame>
+
+          <footer className="foot">Secret path idea: long-press the Omni icon for 2s to enter a root shell. Want me to wire that up next?</footer>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
