@@ -284,6 +284,26 @@
         })();
         return () => { cancelled = true; };
       },[screen, cursor, path, choiceNode, advanceTick]);
+      // --- guard to ensure choices render even if runner paused ---
+      useEffect(()=>{
+        if (screen !== "chat") return;
+        const id = path[cursor];
+        const node = NODES[id];
+        if (node && node.choices && !choiceNode) {
+          setChoiceNode({ id, opts: node.choices.map(c => ({...c})) });
+        }
+      }, [screen, path, cursor, choiceNode]);
+
+
+// guard: if current node has choices but UI didn't render them yet, set them
+useEffect(()=>{
+  if (screen !== "chat") return;
+  const id = path[cursor];
+  const node = NODES[id];
+  if (node && node.choices && !choiceNode) {
+    setChoiceNode({ id, opts: node.choices.map(c=>({...c})) });
+  }
+}, [screen, path, cursor, choiceNode]);
 
       const goto = (seq) => { setPath(seq); setCursor(0); setAdvanceTick(t=>t+1); };
 
@@ -359,8 +379,6 @@
               </div>
             )}
           </PhoneFrame>
-
-          <footer className="foot">Secret path idea: long-press the Omni icon for 2s to enter a root shell. Want me to wire that up next?</footer>
         </div>
       );
     }
