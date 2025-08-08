@@ -223,7 +223,7 @@
       const [avatarUrl] = useState(OMNISCYE_AVATAR);
       const [path, setPath] = useState(PATHS.intro);
       const [choiceNode, setChoiceNode] = useState(null);
-      const [soundOn, setSoundOn] = useState(true);
+      const [soundOn, setSoundOn] = useState(false);
       const [ambienceOn, setAmbienceOn] = useState(true);
       const [notif, setNotif] = useState(null);
       const [carrier, setCarrier] = useState("Futura LTE");
@@ -244,7 +244,7 @@
 
       const pushMessage = async (from, text, delay=0) => {
         await new Promise(r => setTimeout(r, delay));
-        if (from === "omni" && soundOn) await audio.playType();
+        if (from === "omni" && soundOn) { try { audio.playType(); } catch(e){} }
         setMessages(m => [...m, text]);
         setWho(w => [...w, from]);
         scrollToBottom();
@@ -257,7 +257,8 @@
         setPath(PATHS.intro);
       };
 
-      // runner: process nodes until a choice is reached
+      
+      // runner: process nodes until a choice is reached (robust, local index; no audio await)
       useEffect(()=>{
         if (screen !== "chat") return;
         if (choiceNode) return;
@@ -266,24 +267,31 @@
         let cancelled = false;
         (async () => {
           try {
-            while (!cancelled) {
-              if (cursor >= path.length) break;
-              const id = path[cursor];
+            let i = cursor;
+            while (!cancelled && i < path.length) {
+              const id = path[i];
               const node = NODES[id];
               if (!node) break;
-              if (node.text) await pushMessage(node.author, node.text, node.delay||0);
+              // push text without awaiting audio to avoid autoplay blocks
+              if (node.text) {
+                await new Promise(r => setTimeout(r, node.delay || 0));
+                if (soundOn) { try { audio.playType(); } catch(e){} }
+                setMessages(m => [...m, node.text]);
+                setWho(w => [...w, node.author]);
+              }
               if (id === "omni6") setNotif("Omni is requesting Notification Access");
               if (id === "takeover1") { setCarrier("OMNI"); setNotif("Camera active • Battery 6%"); }
               if (node.choices) { setChoiceNode({ id, opts: node.choices.map(c=>({...c})) }); break; }
-              setCursor(c=>c+1);
-              await new Promise(r=>setTimeout(r, 0));
+              i += 1;
             }
+            setCursor(i);
           } finally {
             isRunningRef.current = false;
           }
         })();
         return () => { cancelled = true; };
       },[screen, cursor, path, choiceNode, advanceTick]);
+
       // --- guard to ensure choices render even if runner paused ---
       useEffect(()=>{
         if (screen !== "chat") return;
