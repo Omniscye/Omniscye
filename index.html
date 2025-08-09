@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"/>
   <title>Omniscye — Dark Texting Game</title>
   <link rel="stylesheet" href="style.css"/>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -223,14 +223,12 @@
       const [avatarUrl] = useState(OMNISCYE_AVATAR);
       const [path, setPath] = useState(PATHS.intro);
       const [choiceNode, setChoiceNode] = useState(null);
-      const [soundOn, setSoundOn] = useState(false);
+      const [soundOn, setSoundOn] = useState(true);
       const [ambienceOn, setAmbienceOn] = useState(true);
       const [notif, setNotif] = useState(null);
       const [carrier, setCarrier] = useState("Futura LTE");
       const isRunningRef = useRef(false);
       const [advanceTick, setAdvanceTick] = useState(0);
-      const [isProcessing, setIsProcessing] = useState(false);
-      const renderedChoiceRef = useRef(null);
       const processingRef = useRef(false);
       const viewRef = useRef(null);
       const audio = useAudio();
@@ -283,7 +281,7 @@
               }
               if (id === "omni6") setNotif("Omni is requesting Notification Access");
               if (id === "takeover1") { setCarrier("OMNI"); setNotif("Camera active • Battery 6%"); }
-              if (node.choices) { if (renderedChoiceRef.current !== id) { renderedChoiceRef.current = id; setChoiceNode({ id, opts: node.choices.map(c=>({...c})) }); } break; }
+              if (node.choices) { setChoiceNode({ id, opts: node.choices.map(c=>({...c})) }); break; }
               i += 1;
             }
             setCursor(i);
@@ -299,21 +297,29 @@
         if (screen !== "chat") return;
         const id = path[cursor];
         const node = NODES[id];
-        if (node && node.choices && !choiceNode && renderedChoiceRef.current !== id) { renderedChoiceRef.current = id;
+        if (node && node.choices && !choiceNode) {
           setChoiceNode({ id, opts: node.choices.map(c => ({...c})) });
         }
       }, [screen, path, cursor, choiceNode]);
 
 
+// guard: if current node has choices but UI didn't render them yet, set them
+useEffect(()=>{
+  if (screen !== "chat") return;
+  const id = path[cursor];
+  const node = NODES[id];
+  if (node && node.choices && !choiceNode) {
+    setChoiceNode({ id, opts: node.choices.map(c=>({...c})) });
+  }
+}, [screen, path, cursor, choiceNode]);
+
       const goto = (seq) => { setPath(seq); setCursor(0); setAdvanceTick(t=>t+1); };
 
       const choose = async (opt) => {
-        if (isProcessing) return;
-        setIsProcessing(true);
         if (processingRef.current) return;
         processingRef.current = true;
         try {
-          if (soundOn) { try { audio.playClick(); } catch(e){} }
+          if (soundOn) await audio.playClick();
           const current = path[cursor];
           setChoiceNode(null);
           await pushMessage("you", opt.label);
@@ -327,25 +333,17 @@
           setCursor(c=>c+1);
           setAdvanceTick(t=>t+1);
         } finally {
-          setTimeout(()=>{ processingRef.current = false; setIsProcessing(false); }, 0);
+          setTimeout(()=>{ processingRef.current = false; }, 0);
         }
       };
 
       const reset = async () => {
-        setMessages([]); setWho([]); setChoiceNode(null); renderedChoiceRef.current = null; setCursor(0); setPath(PATHS.intro); setScreen("home"); setCarrier("Futura LTE");
+        setMessages([]); setWho([]); setChoiceNode(null); setCursor(0); setPath(PATHS.intro); setScreen("home"); setCarrier("Futura LTE");
         await pushMessage("you", "Restarting simulation…", 200);
       };
 
       return (
         <div className="app">
-          <Toolbar
-            soundOn={soundOn}
-            toggleSound={()=>setSoundOn(s=>!s)}
-            ambienceOn={ambienceOn}
-            toggleAmbience={()=>setAmbienceOn(s=>!s)}
-            onReset={reset}
-          />
-
           <PhoneFrame>
             {screen !== 'chat' && <StatusBar carrier={carrier} />}
             {screen === "home" && <HomeScreen onOpen={openApp} avatarUrl={avatarUrl} carrier={carrier} />}
@@ -371,7 +369,7 @@
                   {choiceNode ? (
                     <div className="choice-grid">
                       {choiceNode.opts.map((o)=> (
-                        <button key={o.id} onClick={()=>choose(o)} className="choice-btn" disabled={isProcessing}>{o.label}</button>
+                        <button key={o.id} onClick={()=>choose(o)} className="choice-btn">{o.label}</button>
                       ))}
                     </div>
                   ) : (
