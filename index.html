@@ -223,7 +223,7 @@
       const [avatarUrl] = useState(OMNISCYE_AVATAR);
       const [path, setPath] = useState(PATHS.intro);
       const [choiceNode, setChoiceNode] = useState(null);
-      const [soundOn, setSoundOn] = useState(false);
+      const [soundOn, setSoundOn] = useState(true);
       const [ambienceOn, setAmbienceOn] = useState(true);
       const [notif, setNotif] = useState(null);
       const [carrier, setCarrier] = useState("Futura LTE");
@@ -297,27 +297,47 @@
       const goto = (seq) => { setPath(seq); setCursor(0); setAdvanceTick(t=>t+1); setTimeout(()=>setAdvanceTick(t=>t+1),0); };
 
       const choose = async (opt) => {
-        if (processingRef.current) return;
-        processingRef.current = true;
-        try {
-          if (soundOn) await audio.playClick();
-          const current = path[cursor];
-          setChoiceNode(null);
-          await pushMessage("you", opt.label);
-          setTimeout(()=>setAdvanceTick(t=>t+1),0);
-
-          if (current === "c0") { if (opt.next === "omni1") goto(PATHS.b1); if (opt.next === "omni2") goto(PATHS.mid); if (opt.next === "omni3") goto(PATHS.b1); return; }
-          if (current === "c1") { if (opt.next === "pwn1") goto(PATHS.b1); if (opt.next === "explain1") goto(PATHS.safeBranch1); if (opt.next === "explain2") goto(PATHS.safeBranch2); return; }
-          if (current === "c2") { if (opt.next === "pwn3") goto(PATHS.bad2); if (opt.next === "safe1" || opt.next === "safe2") goto(PATHS.towardGood); return; }
-          if (current === "c3") { if (opt.next === "pwn4") { goto(PATHS.bad3); return; } if (opt.next === "safe3" || opt.next === "safe4") { goto(PATHS.toHaunt); return; } }
-          if (current === "cHaunt") { if (opt.next === "cam1") goto(PATHS.goodFinal); if (opt.next === "cam2") goto(PATHS.neutralFinal); if (opt.next === "cam3") goto(PATHS.secretFinal); return; }
-
-          setCursor(c=>c+1);
-          setAdvanceTick(t=>t+1);
-        } finally {
-          setTimeout(()=>{ processingRef.current = false; }, 0);
-        }
-      };
+  if (processingRef.current) return;
+  processingRef.current = true;
+  try {
+    try { if (soundOn) audio.playClick(); } catch(e){}
+    const currentId = (choiceNode && choiceNode.id) || path[cursor];
+    setChoiceNode(null);
+    await pushMessage("you", opt.label);
+    setTimeout(()=>setAdvanceTick(t=>t+1),0);
+    if (currentId === "c0") {
+      if (opt.next === "omni1") goto(PATHS.b1);
+      if (opt.next === "omni2") goto(PATHS.mid);
+      if (opt.next === "omni3") goto(PATHS.b1);
+      return;
+    }
+    if (currentId === "c1") {
+      if (opt.next === "pwn1") goto(PATHS.b1);
+      if (opt.next === "explain1") goto(PATHS.safeBranch1);
+      if (opt.next === "explain2") goto(PATHS.safeBranch2);
+      return;
+    }
+    if (currentId === "c2") {
+      if (opt.next === "pwn3") goto(PATHS.bad2);
+      if (opt.next === "safe1" || opt.next === "safe2") goto(PATHS.towardGood);
+      return;
+    }
+    if (currentId === "c3") {
+      if (opt.next === "pwn4") { goto(PATHS.bad3); return; }
+      if (opt.next === "safe3" || opt.next === "safe4") { goto(PATHS.toHaunt); return; }
+    }
+    if (currentId === "cHaunt") {
+      if (opt.next === "cam1") goto(PATHS.goodFinal);
+      if (opt.next === "cam2") goto(PATHS.neutralFinal);
+      if (opt.next === "cam3") goto(PATHS.secretFinal);
+      return;
+    }
+    setCursor(c=>c+1);
+    setAdvanceTick(t=>t+1);
+  } finally {
+    setTimeout(()=>{ processingRef.current = false; }, 0);
+  }
+};
 
       const reset = async () => {
         setMessages([]); setWho([]); setChoiceNode(null); setCursor(0); setPath(PATHS.intro); setScreen("home"); setCarrier("Futura LTE");
