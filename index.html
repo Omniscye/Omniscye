@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Omniscye — Dark Texting Game</title>
   <link rel="stylesheet" href="style.css"/>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -223,7 +223,7 @@
       const [avatarUrl] = useState(OMNISCYE_AVATAR);
       const [path, setPath] = useState(PATHS.intro);
       const [choiceNode, setChoiceNode] = useState(null);
-      const [soundOn, setSoundOn] = useState(true);
+      const [soundOn, setSoundOn] = useState(false);
       const [ambienceOn, setAmbienceOn] = useState(true);
       const [notif, setNotif] = useState(null);
       const [carrier, setCarrier] = useState("Futura LTE");
@@ -290,39 +290,21 @@
           }
         })();
         return () => { cancelled = true; };
-      },[screen, cursor, path, choiceNode, advanceTick]);
-
-      // --- guard to ensure choices render even if runner paused ---
-      useEffect(()=>{
-        if (screen !== "chat") return;
-        const id = path[cursor];
-        const node = NODES[id];
-        if (node && node.choices && !choiceNode) {
-          setChoiceNode({ id, opts: node.choices.map(c => ({...c})) });
-        }
-      }, [screen, path, cursor, choiceNode]);
+      },[screen, cursor, path, advanceTick]);
 
 
-// guard: if current node has choices but UI didn't render them yet, set them
-useEffect(()=>{
-  if (screen !== "chat") return;
-  const id = path[cursor];
-  const node = NODES[id];
-  if (node && node.choices && !choiceNode) {
-    setChoiceNode({ id, opts: node.choices.map(c=>({...c})) });
-  }
-}, [screen, path, cursor, choiceNode]);
 
-      const goto = (seq) => { setPath(seq); setCursor(0); setAdvanceTick(t=>t+1); };
+      const goto = (seq) => { setPath(seq); setCursor(0); setAdvanceTick(t=>t+1); setTimeout(()=>setAdvanceTick(t=>t+1),0); };
 
       const choose = async (opt) => {
         if (processingRef.current) return;
         processingRef.current = true;
         try {
-          if (soundOn) { try { audio.playClick(); } catch(e){} }
+          if (soundOn) await audio.playClick();
           const current = path[cursor];
           setChoiceNode(null);
           await pushMessage("you", opt.label);
+          setTimeout(()=>setAdvanceTick(t=>t+1),0);
 
           if (current === "c0") { if (opt.next === "omni1") goto(PATHS.b1); if (opt.next === "omni2") goto(PATHS.mid); if (opt.next === "omni3") goto(PATHS.b1); return; }
           if (current === "c1") { if (opt.next === "pwn1") goto(PATHS.b1); if (opt.next === "explain1") goto(PATHS.safeBranch1); if (opt.next === "explain2") goto(PATHS.safeBranch2); return; }
@@ -344,6 +326,14 @@ useEffect(()=>{
 
       return (
         <div className="app">
+          <Toolbar
+            soundOn={soundOn}
+            toggleSound={()=>setSoundOn(s=>!s)}
+            ambienceOn={ambienceOn}
+            toggleAmbience={()=>setAmbienceOn(s=>!s)}
+            onReset={reset}
+          />
+
           <PhoneFrame>
             {screen !== 'chat' && <StatusBar carrier={carrier} />}
             {screen === "home" && <HomeScreen onOpen={openApp} avatarUrl={avatarUrl} carrier={carrier} />}
