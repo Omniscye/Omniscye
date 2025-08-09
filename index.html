@@ -319,7 +319,7 @@ useEffect(()=>{
         if (processingRef.current) return;
         processingRef.current = true;
         try {
-          if (soundOn) await audio.playClick();
+          if (soundOn) { try { audio.playClick(); } catch(e){} }
           const current = path[cursor];
           setChoiceNode(null);
           await pushMessage("you", opt.label);
