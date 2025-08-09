@@ -193,27 +193,13 @@
       return (
         <div className="home">
           <StatusBar carrier={carrier} />
-          <button onClick={onOpen} className="home-app">
+          <button onClick={()=>{ try{ audio.startAmbience(); }catch(e){} onOpen(); }} className="home-app">
             <img src={avatarUrl || OMNISCYE_AVATAR} className="home-icon" alt="Omni" />
             <div className="home-label">Omni</div>
           </button>
         </div>
       );
     }
-
-    function Toolbar({ soundOn, toggleSound, ambienceOn, toggleAmbience, onReset }){
-      return (
-        <div className="toolbar">
-          <div className="title">Omniscye — Secure Chat</div>
-          <div className="tools">
-            <button onClick={toggleSound}>{soundOn ? "SFX On" : "SFX Off"}</button>
-            <button onClick={toggleAmbience}>{ambienceOn ? "Ambience On" : "Ambience Off"}</button>
-            <button onClick={onReset}>Reset</button>
-          </div>
-        </div>
-      );
-    }
-
     // --------- App ----------
     function App(){
       const [screen, setScreen] = useState("home");
@@ -346,14 +332,6 @@
 
       return (
         <div className="app">
-          <Toolbar
-            soundOn={soundOn}
-            toggleSound={()=>setSoundOn(s=>!s)}
-            ambienceOn={ambienceOn}
-            toggleAmbience={()=>setAmbienceOn(s=>!s)}
-            onReset={reset}
-          />
-
           <PhoneFrame>
             {screen !== 'chat' && <StatusBar carrier={carrier} />}
             {screen === "home" && <HomeScreen onOpen={openApp} avatarUrl={avatarUrl} carrier={carrier} />}
